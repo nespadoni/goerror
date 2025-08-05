@@ -1,5 +1,4 @@
-// Package goerror fornece erros pré-definidos para situações comuns
-package goerror
+package main
 
 import "strconv"
 

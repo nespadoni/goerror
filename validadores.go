@@ -1,5 +1,4 @@
-// Package goerror fornece validadores para diversos tipos de dados
-package goerror
+package main
 
 import (
 	"net/mail"

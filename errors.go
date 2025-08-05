@@ -1,5 +1,4 @@
-// Package goerror fornece uma biblioteca robusta para tratamento de erros em Go
-package goerror
+package main
 
 import (
 	"encoding/json"
