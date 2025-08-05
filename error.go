@@ -1,5 +1,5 @@
 // Package errors fornece um sistema de tratamento de erros padronizado para APIs
-package errors
+package main
 
 import (
 	"encoding/json"
