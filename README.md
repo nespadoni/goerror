@@ -1,17 +1,16 @@
 # GoError - Biblioteca de Tratamento de Erros para Go
 
-Uma biblioteca robusta e estruturada para tratamento de erros em aplicações Go, com tipos pré-definidos, códigos HTTP automáticos e informações detalhadas para debugging.
+Uma biblioteca simples e eficiente para padronizar o tratamento de erros em aplicações Go, com tipos pré-definidos, códigos HTTP automáticos e serialização JSON nativa.
 
 ## Características
 
-- ✅ **65+ tipos de erro pré-definidos** organizados por categoria
+- ✅ **8 tipos de erro** organizados por categoria
 - ✅ **Códigos HTTP automáticos** baseados no tipo do erro
-- ✅ **Informações de debugging** (arquivo, linha, timestamp)
-- ✅ **Sugestões automáticas** para resolução de problemas
 - ✅ **Serialização JSON** nativa
-- ✅ **Trace ID** para rastreamento distribuído
-- ✅ **Detalhes customizáveis** para contexto adicional
+- ✅ **Encadeamento de métodos** para adicionar detalhes
+- ✅ **Erros pré-definidos** para casos comuns
 - ✅ **Funções utilitárias** para verificação de tipos
+- ✅ **Integração fácil** com handlers HTTP
 
 ## Instalação
 
@@ -19,474 +18,544 @@ Uma biblioteca robusta e estruturada para tratamento de erros em aplicações Go
 go get github.com/nespadoni/goerror
 ```
 
-## Uso Básico
-
-### Criando um Erro Simples
+## Estrutura do Erro
 
 ```go
-package main
-
-import (
-    "fmt"
-    "github.com/nespadoni/goerror"
-)
-
-func main() {
-    // Criar um erro básico
-    err := goerror.Novo(goerror.EmailInvalido)
-    
-    fmt.Println(err.Error()) // [EMAIL_INVALIDO] Email informado é inválido
-    fmt.Println(err.StatusHTTP) // 400
-    fmt.Println(err.Sugestao) // Use o formato: usuario@dominio.com
+type ErroAPI struct {
+Tipo           TipoErro `json:"tipo"`
+CodigoPersonal string   `json:"codigo_personal"`
+Mensagem       string   `json:"mensagem"`
+StatusHTTP     int      `json:"status_http"`
+Detalhes       string   `json:"detalhes,omitempty"`
+ErroOriginal   error    `json:"-"`
 }
 ```
 
-### Exemplo em Handler HTTP
+## Tipos de Erro Disponíveis
+
+- `TipoBancoDados` - Erros relacionados ao banco de dados (500)
+- `TipoValidacao` - Erros de validação de dados (400)
+- `TipoNaoEncontrado` - Recursos não encontrados (404)
+- `TipoNaoAutorizado` - Problemas de autenticação/autorização (401/403)
+- `TipoConexao` - Erros de conectividade (503)
+- `TipoInterno` - Erros internos do servidor (500)
+- `TipoMetodoInvalido` - Método HTTP não permitido (405)
+- `TipoFormatoInvalido` - Formato de dados inválido (400)
+
+## Funções Principais
+
+### ErroBancoDados
+Retorna `nil` se não houver erro, ou `ErroAPI` se houver erro de banco de dados.
 
 ```go
-func CriarUsuario(w http.ResponseWriter, r *http.Request) {
-    var usuario Usuario
-    if err := json.NewDecoder(r.Body).Decode(&usuario); err != nil {
-        erro := goerror.Novo(goerror.FormatoJSON)
-        w.Header().Set("Content-Type", "application/json")
-        w.WriteHeader(erro.StatusHTTP)
-        w.Write(erro.JSON())
-        return
-    }
-    
-    if usuario.Email == "" {
-        erro := goerror.Novo(goerror.CampoObrigatorio).
-            ComDetalhe("campo", "email").
-            ComDetalhe("valor_recebido", usuario.Email)
-        
-        w.Header().Set("Content-Type", "application/json")
-        w.WriteHeader(erro.StatusHTTP)
-        w.Write(erro.JSON())
-        return
-    }
-    
-    // Lógica de criação...
+func ExemploBancoDados() error {
+err := db.Query("SELECT * FROM usuarios")
+return goerror.ErroBancoDados("DB_QUERY_FAILED", err)
+}
+
+// Uso:
+if err := ExemploBancoDados(); err != nil {
+// Trata o erro
+fmt.Println(err.Error())
+// Output: [BANCO_DADOS:DB_QUERY_FAILED] Erro na operação do banco de dados - connection refused
 }
 ```
 
-## Categorias de Erros
-
-### 🔍 Erros de Validação (400)
-Para problemas de entrada de dados:
+### ErroValidacao
+Sempre retorna erro para casos de validação de dados.
 
 ```go
-// Campos obrigatórios
-goerror.Novo(goerror.CampoObrigatorio)
-goerror.Novo(goerror.CampoInvalido)
-
-// Formatos específicos
-goerror.Novo(goerror.EmailInvalido)
-goerror.Novo(goerror.CPFInvalido) 
-goerror.Novo(goerror.TelefoneInvalido)
-goerror.Novo(goerror.DataInvalida)
-
-// Validações de tamanho
-goerror.Novo(goerror.TamanhoMinimo)
-goerror.Novo(goerror.TamanhoMaximo)
-goerror.Novo(goerror.IdadeMinima)
-
-// Outros
-goerror.Novo(goerror.SenhaFraca)
-goerror.Novo(goerror.FormatoJSON)
-```
-
-### 🔐 Erros de Autenticação (401)
-Para problemas de login e tokens:
-
-```go
-goerror.Novo(goerror.CredenciaisInvalidas)
-goerror.Novo(goerror.TokenInvalido)
-goerror.Novo(goerror.TokenExpirado)
-goerror.Novo(goerror.SessaoExpirada)
-goerror.Novo(goerror.LoginObrigatorio)
-```
-
-### 🚫 Erros de Autorização (403)
-Para problemas de permissão:
-
-```go
-goerror.Novo(goerror.SemPermissao)
-goerror.Novo(goerror.AcessoNegado)
-goerror.Novo(goerror.PerfilInsuficiente)
-goerror.Novo(goerror.RecursoProtegido)
-```
-
-### 🔍 Erros de Recurso Não Encontrado (404)
-Para recursos inexistentes:
-
-```go
-goerror.Novo(goerror.UsuarioNaoEncontrado)
-goerror.Novo(goerror.ProdutoNaoEncontrado)
-goerror.Novo(goerror.PedidoNaoEncontrado)
-goerror.Novo(goerror.ArquivoNaoEncontrado)
-goerror.Novo(goerror.PaginaNaoEncontrada)
-goerror.Novo(goerror.EndpointNaoEncontrado)
-```
-
-### ⚔️ Erros de Conflito (409)
-Para recursos duplicados:
-
-```go
-goerror.Novo(goerror.EmailJaExiste)
-goerror.Novo(goerror.CPFJaExiste)
-goerror.Novo(goerror.UsuarioJaExiste)
-goerror.Novo(goerror.RecursoJaExiste)
-goerror.Novo(goerror.EstadoInvalido)
-goerror.Novo(goerror.VersaoConflito)
-```
-
-### 💼 Erros de Regra de Negócio (422)
-Para violações de regras específicas:
-
-```go
-goerror.Novo(goerror.SaldoInsuficiente)
-goerror.Novo(goerror.EstoqueIndisponivel)
-goerror.Novo(goerror.LimiteExcedido)
-goerror.Novo(goerror.OperacaoNaoPermitida)
-goerror.Novo(goerror.RegraViolada)
-goerror.Novo(goerror.StatusInvalido)
-goerror.Novo(goerror.PrazoVencido)
-```
-
-### 🗄️ Erros de Banco de Dados (500)
-Para problemas de persistência:
-
-```go
-goerror.Novo(goerror.ErroBancoDados)
-goerror.Novo(goerror.ConexaoBanco)
-goerror.Novo(goerror.TimeoutBanco)
-goerror.Novo(goerror.TransacaoFalhou)
-goerror.Novo(goerror.ConstraintViolada)
-```
-
-### 🖥️ Erros de Sistema (500)
-Para problemas internos:
-
-```go
-goerror.Novo(goerror.ErroInterno)
-goerror.Novo(goerror.ServicoIndisponivel)
-goerror.Novo(goerror.MemoriaInsuficiente)
-goerror.Novo(goerror.ConfiguracaoInvalida)
-goerror.Novo(goerror.ErroInesperado)
-```
-
-### 🌐 Erros de Rede (502/503/504)
-Para problemas de conectividade:
-
-```go
-goerror.Novo(goerror.ServicoExternoIndisponivel)
-goerror.Novo(goerror.TimeoutRede)
-goerror.Novo(goerror.ConexaoRecusada)
-goerror.Novo(goerror.APIExternaIndisponivel)
-```
-
-### ⏱️ Erros de Limite (429)
-Para rate limiting:
-
-```go
-goerror.Novo(goerror.MuitasRequisicoes)
-goerror.Novo(goerror.LimiteAPI)
-goerror.Novo(goerror.QuotaExcedida)
-```
-
-### 🚷 Erros de Método (405/406)
-Para problemas de protocolo:
-
-```go
-goerror.Novo(goerror.MetodoNaoPermitido)
-goerror.Novo(goerror.VersaoNaoSuportada)
-```
-
-## Funcionalidades Avançadas
-
-### Adicionando Detalhes
-
-```go
-// Detalhe único
-err := goerror.Novo(goerror.CampoObrigatorio).
-    ComDetalhe("campo", "email").
-    ComDetalhe("valor_recebido", "")
-
-// Múltiplos detalhes
-detalhes := map[string]interface{}{
-    "usuario_id": 123,
-    "tentativas": 3,
-    "ip": "192.168.1.1",
+func ValidarIdade(idade int) error {
+if idade < 18 {
+return goerror.ErroValidacao("IDADE_INSUFICIENTE", "Idade deve ser maior que 18 anos")
 }
-err := goerror.Novo(goerror.CredenciaisInvalidas).ComDetalhes(detalhes)
+return nil
+}
+
+// Uso:
+if err := ValidarIdade(16); err != nil {
+fmt.Println(err.Error())
+// Output: [VALIDACAO:IDADE_INSUFICIENTE] Idade deve ser maior que 18 anos
+}
 ```
 
-### Trace ID para Sistemas Distribuídos
+### ErroNaoEncontrado
+Sempre retorna erro para recursos não encontrados.
 
 ```go
-err := goerror.Novo(goerror.ServicoExternoIndisponivel).
-    ComTraceID("req-abc123-def456")
+func BuscarUsuario(id int) error {
+// Simula busca que não encontrou o usuário
+return goerror.ErroNaoEncontrado("USER_NOT_FOUND", "Usuário")
+}
+
+// Uso:
+if err := BuscarUsuario(123); err != nil {
+fmt.Println(err.Error())
+// Output: [NAO_ENCONTRADO:USER_NOT_FOUND] Usuário não encontrado
+}
 ```
 
-### Encadeamento de Métodos
+### ErroNaoAutorizado
+Sempre retorna erro para problemas de autenticação/autorização.
 
 ```go
-err := goerror.Novo(goerror.SaldoInsuficiente).
-    ComDetalhe("saldo_atual", 100.50).
-    ComDetalhe("valor_tentativa", 250.00).
-    ComDetalhe("usuario_id", 42).
-    ComTraceID("txn-789xyz")
+func VerificarPermissao(token string) error {
+if token == "" {
+return goerror.ErroNaoAutorizado("MISSING_TOKEN", "Token de acesso obrigatório")
+}
+return nil
+}
+
+// Uso:
+if err := VerificarPermissao(""); err != nil {
+fmt.Println(err.Error())
+// Output: [NAO_AUTORIZADO:MISSING_TOKEN] Token de acesso obrigatório
+}
+```
+
+### ErroConexao
+Retorna `nil` se não houver erro, ou `ErroAPI` se houver erro de conexão.
+
+```go
+func ConectarAPI() error {
+_, err := http.Get("https://api.externa.com/dados")
+return goerror.ErroConexao("API_CONNECTION_FAILED", err)
+}
+
+// Uso:
+if err := ConectarAPI(); err != nil {
+fmt.Println(err.Error())
+// Output: [CONEXAO:API_CONNECTION_FAILED] Erro de conexão - dial tcp: connection refused
+}
+```
+
+### ErroInterno
+Retorna `nil` se não houver erro, ou `ErroAPI` se houver erro interno.
+
+```go
+func ProcessarDados() error {
+err := errors.New("falha no processamento interno")
+return goerror.ErroInterno("PROCESSING_FAILED", err)
+}
+
+// Uso:
+if err := ProcessarDados(); err != nil {
+fmt.Println(err.Error())
+// Output: [INTERNO:PROCESSING_FAILED] Erro interno do servidor - falha no processamento interno
+}
+```
+
+### ErroMetodoInvalido
+Sempre retorna erro para métodos HTTP não permitidos.
+
+```go
+func ValidarMetodo(metodo string) error {
+if metodo != "POST" {
+return goerror.ErroMetodoInvalido("WRONG_METHOD", "POST")
+}
+return nil
+}
+
+// Uso:
+if err := ValidarMetodo("GET"); err != nil {
+fmt.Println(err.Error())
+// Output: [METODO_INVALIDO:WRONG_METHOD] Método não permitido. Esperado: POST
+}
+```
+
+### ErroFormatoInvalido
+Retorna `nil` se não houver erro, ou `ErroAPI` se houver erro de formato.
+
+```go
+func ParsearJSON(data []byte) error {
+var result map[string]interface{}
+err := json.Unmarshal(data, &result)
+return goerror.ErroFormatoInvalido("JSON_PARSE_ERROR", err)
+}
+
+// Uso:
+if err := ParsearJSON([]byte("json inválido")); err != nil {
+fmt.Println(err.Error())
+// Output: [FORMATO_INVALIDO:JSON_PARSE_ERROR] Formato de dados inválido - invalid character 'j'...
+}
+```
+
+## Funções de Criação Personalizada
+
+### NovoErroBancoDados
+Cria um novo erro de banco de dados com mensagem personalizada.
+
+```go
+func ExemploPersonalizado() error {
+return goerror.NovoErroBancoDados("CUSTOM_DB_ERROR", "Falha na conexão com PostgreSQL")
+}
+
+// Uso:
+err := ExemploPersonalizado()
+fmt.Println(err.Error())
+// Output: [BANCO_DADOS:CUSTOM_DB_ERROR] Falha na conexão com PostgreSQL
+```
+
+### NovoErroValidacao
+Cria um novo erro de validação com mensagem personalizada.
+
+```go
+func ValidarEmail(email string) error {
+if !strings.Contains(email, "@") {
+return goerror.NovoErroValidacao("INVALID_EMAIL", "Email deve conter @")
+}
+return nil
+}
+
+// Uso:
+if err := ValidarEmail("emailinvalido"); err != nil {
+fmt.Println(err.Error())
+// Output: [VALIDACAO:INVALID_EMAIL] Email deve conter @
+}
+```
+
+### NovoErroNaoEncontrado
+Cria um novo erro de recurso não encontrado.
+
+```go
+func BuscarProduto(id string) error {
+return goerror.NovoErroNaoEncontrado("PRODUCT_NOT_FOUND", "Produto")
+}
+
+// Uso:
+err := BuscarProduto("123")
+fmt.Println(err.Error())
+// Output: [NAO_ENCONTRADO:PRODUCT_NOT_FOUND] Produto não encontrado
+```
+
+### NovoErroConexao
+Cria um novo erro de conexão com mensagem personalizada.
+
+```go
+func TestarConexao() error {
+return goerror.NovoErroConexao("REDIS_CONN_FAILED", "Não foi possível conectar ao Redis")
+}
+
+// Uso:
+err := TestarConexao()
+fmt.Println(err.Error())
+// Output: [CONEXAO:REDIS_CONN_FAILED] Não foi possível conectar ao Redis
+```
+
+### NovoErroInterno
+Cria um novo erro interno com mensagem personalizada.
+
+```go
+func ProcessarConfig() error {
+return goerror.NovoErroInterno("CONFIG_LOAD_FAILED", "Falha ao carregar configurações")
+}
+
+// Uso:
+err := ProcessarConfig()
+fmt.Println(err.Error())
+// Output: [INTERNO:CONFIG_LOAD_FAILED] Falha ao carregar configurações
+```
+
+### NovoErroMetodoInvalido
+Cria um novo erro de método inválido com mensagem personalizada.
+
+```go
+func ValidarMetodoCustom() error {
+return goerror.NovoErroMetodoInvalido("ONLY_PUT_ALLOWED", "Apenas PUT é permitido neste endpoint")
+}
+
+// Uso:
+err := ValidarMetodoCustom()
+fmt.Println(err.Error())
+// Output: [METODO_INVALIDO:ONLY_PUT_ALLOWED] Apenas PUT é permitido neste endpoint
+```
+
+## Métodos de Encadeamento
+
+### ComDetalhes
+Adiciona detalhes adicionais ao erro.
+
+```go
+func ExemploComDetalhes() error {
+return goerror.NovoErroValidacao("FIELD_REQUIRED", "Campo obrigatório").
+ComDetalhes("Campo 'email' é obrigatório para cadastro")
+}
+
+// Uso:
+err := ExemploComDetalhes()
+fmt.Println(err.Error())
+// Output: [VALIDACAO:FIELD_REQUIRED] Campo obrigatório - Campo 'email' é obrigatório para cadastro
+```
+
+### ComCausa
+Adiciona o erro original que causou este erro.
+
+```go
+func ExemploComCausa() error {
+originalErr := errors.New("connection timeout")
+return goerror.NovoErroBancoDados("DB_TIMEOUT", "Timeout na consulta").
+ComCausa(originalErr)
+}
+
+// Uso:
+err := ExemploComCausa()
+fmt.Println(err.Error())
+// Output: [BANCO_DADOS:DB_TIMEOUT] Timeout na consulta - connection timeout (Original: connection timeout)
+```
+
+## Erros Pré-definidos
+
+### ErrUsuarioNaoEncontrado
+```go
+func BuscarUsuarioExemplo(id int) error {
+// Simula usuário não encontrado
+return goerror.ErrUsuarioNaoEncontrado
+}
+
+// Uso:
+if err := BuscarUsuarioExemplo(123); err != nil {
+fmt.Println(err.Error())
+// Output: [NAO_ENCONTRADO:USER_NOT_FOUND] Usuário não encontrado
+}
+```
+
+### ErrEmailJaExiste
+```go
+func CadastrarUsuario(email string) error {
+// Simula email já existente
+return goerror.ErrEmailJaExiste
+}
+
+// Uso:
+if err := CadastrarUsuario("test@test.com"); err != nil {
+fmt.Println(err.Error())
+// Output: [VALIDACAO:EMAIL_EXISTS] Email já está em uso
+}
+```
+
+### ErrTokenInvalido
+```go
+func ValidarToken(token string) error {
+if token == "invalid" {
+return goerror.ErrTokenInvalido
+}
+return nil
+}
+
+// Uso:
+if err := ValidarToken("invalid"); err != nil {
+fmt.Println(err.Error())
+// Output: [NAO_AUTORIZADO:INVALID_TOKEN] Token de autenticação inválido
+}
+```
+
+### ErrPermissaoNegada
+```go
+func VerificarAdmin(userRole string) error {
+if userRole != "admin" {
+return goerror.ErrPermissaoNegada
+}
+return nil
+}
+
+// Uso:
+if err := VerificarAdmin("user"); err != nil {
+fmt.Println(err.Error())
+// Output: [NAO_AUTORIZADO:PERMISSION_DENIED] Permissão negada para esta operação
+}
 ```
 
 ## Funções Utilitárias
 
-### Extraindo Informações
+### ConverterErro
+Converte um erro comum para ErroAPI.
 
 ```go
-err := goerror.Novo(goerror.UsuarioNaoEncontrado)
+func ExemploConverter() error {
+err := errors.New("erro desconhecido")
+return goerror.ConverterErro(err)
+}
 
-// Obter status HTTP
-status := goerror.ObterStatusHTTP(err) // 404
-
-// Obter código do erro
-codigo := goerror.ObterCodigo(err) // "USUARIO_NAO_ENCONTRADO"
+// Uso:
+err := ExemploConverter()
+if apiErr := goerror.ConverterErro(err); apiErr != nil {
+fmt.Println(apiErr.Error())
+// Output: [INTERNO:UNKNOWN_ERROR] Erro interno não identificado - erro desconhecido
+}
 ```
 
-### Verificação de Categorias
+### ResponderComErro
+Helper para responder requisições HTTP com erro.
 
 ```go
-err := goerror.Novo(goerror.EmailInvalido)
-
-// Verificar tipo de erro
-if goerror.EhValidacao(err) {
-    // É um erro de validação (400)
+func HandlerExemplo(w http.ResponseWriter, r *http.Request) {
+err := goerror.ErroValidacao("INVALID_INPUT", "Dados inválidos")
+goerror.ResponderComErro(w, err)
+// Resposta HTTP 400 com JSON do erro
 }
 
-if goerror.EhAutenticacao(err) {
-    // É um erro de autenticação (401)
+// JSON retornado:
+// {
+//   "erro": true,
+//   "tipo": "VALIDACAO",
+//   "codigo": "INVALID_INPUT",
+//   "mensagem": "Dados inválidos",
+//   "status_http": 400
+// }
+```
+
+## Funções de Verificação de Tipo
+
+### EhErroValidacao
+Verifica se o erro é do tipo validação.
+
+```go
+func TratarErro(err error) {
+if goerror.EhErroValidacao(err) {
+log.Println("Erro de validação:", err.Error())
+}
 }
 
-if goerror.EhAutorizacao(err) {
-    // É um erro de autorização (403)
+// Uso:
+err := goerror.ErroValidacao("FIELD_INVALID", "Campo inválido")
+TratarErro(err)
+// Output: Erro de validação: [VALIDACAO:FIELD_INVALID] Campo inválido
+```
+
+### EhErroBancoDados
+Verifica se o erro é do tipo banco de dados.
+
+```go
+func TratarErroBD(err error) {
+if goerror.EhErroBancoDados(err) {
+log.Println("Problema no banco:", err.Error())
+}
 }
 
-if goerror.EhNaoEncontrado(err) {
-    // É um erro 404
+// Uso:
+err := goerror.NovoErroBancoDados("QUERY_FAILED", "Falha na query")
+TratarErroBD(err)
+// Output: Problema no banco: [BANCO_DADOS:QUERY_FAILED] Falha na query
+```
+
+### EhErroNaoEncontrado
+Verifica se o erro é do tipo não encontrado.
+
+```go
+func TratarNotFound(err error) {
+if goerror.EhErroNaoEncontrado(err) {
+log.Println("Recurso não encontrado:", err.Error())
+}
 }
 
-if goerror.EhConflito(err) {
-    // É um erro de conflito (409)
+// Uso:
+err := goerror.ErrUsuarioNaoEncontrado
+TratarNotFound(err)
+// Output: Recurso não encontrado: [NAO_ENCONTRADO:USER_NOT_FOUND] Usuário não encontrado
+```
+
+### EhErroNaoAutorizado
+Verifica se o erro é do tipo não autorizado.
+
+```go
+func TratarAuth(err error) {
+if goerror.EhErroNaoAutorizado(err) {
+log.Println("Problema de autorização:", err.Error())
+}
 }
 
-if goerror.EhNegocio(err) {
-    // É um erro de regra de negócio (422)
+// Uso:
+err := goerror.ErrTokenInvalido
+TratarAuth(err)
+// Output: Problema de autorização: [NAO_AUTORIZADO:INVALID_TOKEN] Token de autenticação inválido
+```
+
+### EhErroConexao
+Verifica se o erro é do tipo conexão.
+
+```go
+func TratarConexao(err error) {
+if goerror.EhErroConexao(err) {
+log.Println("Problema de conectividade:", err.Error())
+}
 }
 
-if goerror.EhSistema(err) {
-    // É um erro de sistema (500+)
-}
+// Uso:
+connErr := errors.New("timeout")
+err := goerror.ErroConexao("CONN_TIMEOUT", connErr)
+TratarConexao(err)
+// Output: Problema de conectividade: [CONEXAO:CONN_TIMEOUT] Erro de conexão - timeout
 ```
 
 ## Serialização JSON
 
-### Output JSON Automático
+### Método JSON()
+Retorna a representação JSON do erro.
 
-Quando você chama `err.JSON()`, a biblioteca retorna:
+```go
+func ExemploJSON() {
+err := goerror.NovoErroValidacao("EMAIL_REQUIRED", "Email é obrigatório").
+ComDetalhes("O campo email não pode estar vazio")
 
-```json
-{
-  "codigo": "EMAIL_INVALIDO",
-  "mensagem": "Email informado é inválido",
-  "sugestao": "Use o formato: usuario@dominio.com",
-  "detalhes": {
-    "campo": "email",
-    "valor_recebido": "email-inválido"
-  },
-  "timestamp": "2024-08-04T15:30:45Z",
-  "arquivo": "/app/handlers/user.go",
-  "linha": 45,
-  "trace_id": "req-abc123"
+jsonBytes := err.JSON()
+fmt.Println(string(jsonBytes))
+}
+
+// Output:
+// {
+//   "erro": true,
+//   "tipo": "VALIDACAO",
+//   "codigo": "EMAIL_REQUIRED", 
+//   "mensagem": "Email é obrigatório",
+//   "status_http": 400,
+//   "detalhes": "O campo email não pode estar vazio"
+// }
+```
+
+## Exemplo Completo em Handler HTTP
+
+```go
+func CriarUsuarioHandler(w http.ResponseWriter, r *http.Request) {
+// Validar método
+if err := goerror.ErroMetodoInvalido("WRONG_METHOD", "POST"); r.Method != "POST" && err != nil {
+goerror.ResponderComErro(w, err)
+return
+}
+
+// Parse JSON
+var dados map[string]interface{}
+if err := json.NewDecoder(r.Body).Decode(&dados); err != nil {
+erro := goerror.ErroFormatoInvalido("JSON_PARSE_ERROR", err)
+goerror.ResponderComErro(w, erro)
+return
+}
+
+// Validar email
+email, ok := dados["email"].(string)
+if !ok || email == "" {
+erro := goerror.ErroValidacao("EMAIL_REQUIRED", "Email é obrigatório")
+goerror.ResponderComErro(w, erro)
+return
+}
+
+// Verificar se usuário já existe
+if emailExiste(email) {
+goerror.ResponderComErro(w, goerror.ErrEmailJaExiste)
+return
+}
+
+// Simular erro de banco
+if err := salvarUsuario(dados); err != nil {
+erro := goerror.ErroBancoDados("USER_SAVE_FAILED", err)
+goerror.ResponderComErro(w, erro)
+return
+}
+
+// Sucesso
+w.WriteHeader(http.StatusCreated)
+json.NewEncoder(w).Encode(map[string]string{"status": "created"})
 }
 ```
-
-### Middleware de Tratamento de Erros
-
-```go
-func ErrorMiddleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        defer func() {
-            if err := recover(); err != nil {
-                var customErr *goerror.ErroCompleto
-                
-                switch e := err.(type) {
-                case *goerror.ErroCompleto:
-                    customErr = e
-                case error:
-                    customErr = goerror.Novo(goerror.ErroInterno).
-                        ComDetalhe("erro_original", e.Error())
-                default:
-                    customErr = goerror.Novo(goerror.ErroInesperado).
-                        ComDetalhe("panic_value", fmt.Sprintf("%v", err))
-                }
-                
-                w.Header().Set("Content-Type", "application/json")
-                w.WriteHeader(customErr.StatusHTTP)
-                w.Write(customErr.JSON())
-            }
-        }()
-        
-        next.ServeHTTP(w, r)
-    })
-}
-```
-
-## Exemplos Práticos
-
-### Validação de Dados
-
-```go
-func ValidarUsuario(usuario *Usuario) error {
-    if usuario.Email == "" {
-        return goerror.Novo(goerror.CampoObrigatorio).
-            ComDetalhe("campo", "email")
-    }
-    
-    if !isValidEmail(usuario.Email) {
-        return goerror.Novo(goerror.EmailInvalido).
-            ComDetalhe("email_fornecido", usuario.Email)
-    }
-    
-    if len(usuario.Senha) < 8 {
-        return goerror.Novo(goerror.SenhaFraca).
-            ComDetalhe("tamanho_atual", len(usuario.Senha)).
-            ComDetalhe("tamanho_minimo", 8)
-    }
-    
-    return nil
-}
-```
-
-### Service Layer
-
-```go
-func (s *UserService) CriarUsuario(ctx context.Context, dados *CriarUsuarioRequest) (*Usuario, error) {
-    // Verificar se email já existe
-    existente, err := s.repo.BuscarPorEmail(ctx, dados.Email)
-    if err != nil && !goerror.EhNaoEncontrado(err) {
-        return nil, goerror.Novo(goerror.ErroBancoDados).
-            ComDetalhe("operacao", "buscar_usuario").
-            ComTraceID(ctx.Value("trace_id").(string))
-    }
-    
-    if existente != nil {
-        return nil, goerror.Novo(goerror.EmailJaExiste).
-            ComDetalhe("email", dados.Email)
-    }
-    
-    // Criar usuário
-    usuario, err := s.repo.Criar(ctx, dados)
-    if err != nil {
-        return nil, goerror.Novo(goerror.TransacaoFalhou).
-            ComDetalhe("operacao", "criar_usuario").
-            ComTraceID(ctx.Value("trace_id").(string))
-    }
-    
-    return usuario, nil
-}
-```
-
-### Integração com APIs Externas
-
-```go
-func (c *PaymentClient) ProcessarPagamento(valor float64) error {
-    resp, err := http.Post(c.baseURL+"/payments", "application/json", body)
-    if err != nil {
-        return goerror.Novo(goerror.ServicoExternoIndisponivel).
-            ComDetalhe("servico", "payment_api").
-            ComDetalhe("erro_http", err.Error())
-    }
-    
-    defer resp.Body.Close()
-    
-    switch resp.StatusCode {
-    case 401:
-        return goerror.Novo(goerror.TokenInvalido).
-            ComDetalhe("servico", "payment_api")
-    case 429:
-        return goerror.Novo(goerror.LimiteAPI).
-            ComDetalhe("servico", "payment_api")
-    case 422:
-        return goerror.Novo(goerror.SaldoInsuficiente).
-            ComDetalhe("valor_tentativa", valor)
-    }
-    
-    return nil
-}
-```
-
-## Informações de Debug
-
-A biblioteca automaticamente captura:
-
-- **Arquivo e linha** onde o erro foi criado
-- **Timestamp** da criação do erro
-- **Stack trace** implícito através do arquivo/linha
-- **Trace ID** para rastreamento distribuído
-
-```go
-err := goerror.Novo(goerror.UsuarioNaoEncontrado)
-fmt.Printf("Erro criado em: %s:%d\n", err.Arquivo, err.Linha)
-fmt.Printf("Timestamp: %s\n", err.Timestamp.Format(time.RFC3339))
-```
-
-## Boas Práticas
-
-### 1. Use os Tipos Corretos
-```go
-// ✅ Correto
-return goerror.Novo(goerror.EmailJaExiste)
-
-// ❌ Incorreto - use um tipo mais específico
-return goerror.Novo(goerror.CampoInvalido)
-```
-
-### 2. Adicione Contexto Relevante
-```go
-// ✅ Correto
-return goerror.Novo(goerror.SaldoInsuficiente).
-    ComDetalhe("saldo_atual", conta.Saldo).
-    ComDetalhe("valor_necessario", valor)
-
-// ❌ Sem contexto suficiente
-return goerror.Novo(goerror.SaldoInsuficiente)
-```
-
-### 3. Use Trace IDs em Sistemas Distribuídos
-```go
-// ✅ Correto
-traceID := ctx.Value("trace_id").(string)
-return goerror.Novo(goerror.ServicoExternoIndisponivel).
-    ComTraceID(traceID)
-```
-
-### 4. Trate Erros na Camada Correta
-```go
-// ✅ Na camada de serviço - transforme erros técnicos em erros de negócio
-if err != nil {
-    if strings.Contains(err.Error(), "duplicate key") {
-        return goerror.Novo(goerror.EmailJaExiste)
-    }
-    return goerror.Novo(goerror.ErroBancoDados)
-}
-```
-
-## Contribuição
-
-1. Fork o projeto
-2. Crie uma branch para sua feature (`git checkout -b feature/nova-funcionalidade`)
-3. Commit suas mudanças (`git commit -am 'Adiciona nova funcionalidade'`)
-4. Push para a branch (`git push origin feature/nova-funcionalidade`)
-5. Abra um Pull Request
 
 ## Licença
 
